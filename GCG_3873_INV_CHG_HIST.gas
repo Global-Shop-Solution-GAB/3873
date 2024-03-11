@@ -1,0 +1,678 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.UDT.uInvOriginal.Define("Date_time",String,Date_TIME)
+Variable.UDT.uInvOriginal.Define("USER",String,USER)
+Variable.UDT.uInvOriginal.Define("PART",String,PART)
+Variable.UDT.uInvOriginal.Define("SWITCH",String,SWITCH)
+Variable.UDT.uInvOriginal.Define("FIELD_ID",String,FIELD_ID)
+Variable.UDT.uInvOriginal.Define("Field_VALUE",String,Field_VALUE)
+Variable.uGlobal.uINVOriginal.Declare("uInvOriginal")
+Variable.UDT.uInvAfter.Define("DATE_TIME",String,DATE_TIME)
+Variable.UDT.uInvAfter.Define("USER",String,USER)
+Variable.UDT.uInvAfter.Define("PART",String,PART)
+Variable.UDT.uInvAfter.Define("SWITCH",String,SWITCH)
+Variable.UDT.uInvAfter.Define("FIELD_ID",String,FIELD_ID)
+Variable.UDT.uInvAfter.Define("FIELD_VALUE",String,FIELD_VALUE)
+Variable.uGlobal.uInvAfter.Declare("uInvAfter")
+Variable.Global.sUDTChoice.Declare(String)
+Variable.Global.iUDTINC.Declare(Long,0)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Quote 3823
+'coded by TRT
+'12/4/12
+'Program that will track inventory changes made, in either open, delete, or new instances
+
+'fields to track
+'part
+'revision
+'location
+'prod line
+'part description
+'UM
+'source
+'bin
+'cost
+'alt cost
+'Do not calc ABC flag
+'ABC
+'Purch UM
+'ALT Price 1-4
+
+'Save pre Btn hook 10170
+'save post btn hook 10185
+
+'open connection
+F.ODBC.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+F.Intrinsic.Control.If(V.Caller.Hook,=,10170)
+	F.Intrinsic.Control.CallSub(Invoriginal)
+F.Intrinsic.Control.ElseIf(V.Caller.Hook,=,10185)
+	F.Intrinsic.Control.CallSub(Invsave)
+F.Intrinsic.Control.Else
+	F.ODBC.Connection!conx.CloseRecordsets
+	F.ODBC.Connection!conx.Close
+F.Intrinsic.Control.EndIf
+
+Program.Sub.Main.End
+
+Program.Sub.INVOriginal.Start
+'Subroutine that will be called on the Open of the inventory
+'maintenance screen
+'if switch is O we need to track all the fields
+'if switch is either for NEw or delete, all we need to track is the part number and the description
+
+V.Local.sSQL1.Declare(String)
+V.Local.sSQL2.Declare(String)
+V.Local.sSQL3.Declare(String)
+V.Local.sPart.Declare(String)
+V.Local.SRev.Declare(String)
+V.Local.sPartRev.Declare(String)
+V.Local.dDate_time.Declare(Date)
+V.Local.sOrd.Declare(String)
+
+
+V.Local.dDate_time.Set(V.Ambient.Now)
+V.Global.sUDTChoice.Set("uInvOriginal")
+'if the switch is new there will not be any data
+
+
+
+F.Intrinsic.Control.If(V.Caller.Switches,<>,"N")
+	V.Local.sPart.Set(V.Passed.000007)
+	V.Local.SRev.Set(V.Passed.000008)
+	F.Intrinsic.String.GSSPartString(V.Local.sPart,V.Local.SRev,V.Local.sPartRev)
+
+	'Inventory MSTr table and fields
+	F.Intrinsic.String.Concat(V.Local.sSQL1,"Select Left(Part, 17) As Part, Right (Part, 3) As Rev, Location, Product_Line, Description, UM_INVENTORY, BIN, AMT_COST,",V.Local.sSQL1)
+	F.Intrinsic.String.Concat(V.Local.sSQL1," AMT_ALT_COST, CODE_ABC, UM_PURCHASING From V_INVENTORY_MSTR Where Part ='",V.Local.sPartRev,"'",V.Local.sSQL1)
+		
+	'Master 2 and Inventory MSTr 3 table
+	F.Intrinsic.String.Concat("Select IM2.Code_Source, IM3.DO_NOT_CALC_ABC FRom V_Inventory_MST2 As IM2 Inner Join V_Inventory_MST3 AS IM3 On IM2.Part = IM3.Part Where IM2.Part ='",V.Local.sPartRev,"'",V.Local.sSQL2)
+	
+	'Inventory ALt Price table
+	F.Intrinsic.String.concat("Select ALT_PRICE_1, ALT_PRICE_2, ALT_PRICE_3, ALT_PRICE_4 From V_INV_ALT_PRICE Where Part = '",V.Local.sPartRev,"'",V.Local.sSQL3)
+
+	'open recordsets
+	F.ODBC.connection!conx.OpenRecordsetRO("rstMSTR",V.Local.sSQL1)
+	F.ODBC.Connection!conx.OpenRecordsetRO("rstMST2&3",V.Local.sSQL2)
+	F.ODBC.Connection!conx.OpenRecordsetRO("rstALTPRICE",V.Local.sSQL3)
+	
+	F.Intrinsic.Control.If(V.ODBC.conx!rstMSTR.EOF,=,True)
+		F.ODBC.conx!rstMSTR.Close
+		'starting with 100 as id go down
+		'part
+		V.uGlobal.uINVOriginal.RedimPreserve(0,V.Global.iUDTINC)
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("100")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'rev
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("101")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'location
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("102")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Prod Line
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!FIELD_ID.Set("103")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Part Description
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("104")
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'UM
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!Field_ID.Set("105")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'ABC
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("111")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Purch Um
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("112")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'BIN
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("107")
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'COST
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("108")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt cost
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("109")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.Control.Else
+		'starting with 100 as id go down
+		'part
+		V.uGlobal.uINVOriginal.RedimPreserve(0,V.Global.iUDTINC)
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("100")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!part)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		
+		'rev
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("101")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!rev)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'location
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("102")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!Location)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Prod Line
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!FIELD_ID.Set("103")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!Product_Line)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Part Description
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("104")
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!Description)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'UM
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!Field_ID.Set("105")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!UM_INVENTORY)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'ABC
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("111")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!CODE_ABC)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Purch Um
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("112")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!UM_PURCHASING)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'BIN
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("107")
+		V.uGlobal.uInvOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!BIN)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'COST
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("108")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!AMT_COST)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt cost
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("109")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!AMT_ALT_COST)
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.Control.If(V.ODBC.conx!rstmst2&3.EOF,=,True)
+		F.ODBC.conx!rstMST2&3.Close
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("106")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		' do no calc abc flag
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("110")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.Control.Else
+		'Source
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("106")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMST2&3.FieldValTrim!CODE_SOURCE)
+		F.Intrinsic.Control.CallSub(Udtinc)
+
+		' do no calc abc flag
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("110")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMST2&3.FieldValTrim!DO_NOT_CALC_ABC)
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.control.EndIf
+
+	F.Intrinsic.Control.If(V.ODBC.conx!rstALTPRICE.EOF,=,True)
+		F.ODBC.conx!rstALTPRICE.Close
+		'alt price 1
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("113")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 2
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("114")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 3
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("115")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 4
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("116")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+	F.Intrinsic.Control.Else
+		'alt price 1
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("113")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_1)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 2
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("114")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_2)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 3
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("115")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_3)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 4
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_ID.Set("116")
+		V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_4)
+	F.Intrinsic.Control.EndIf
+
+	F.ODBC.Connection!conx.CloseRecordsets
+F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.If(V.Caller.Switches,=,"O")
+	'set the udt variables needed
+	'F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uINVOriginal!BEFORE_AFTER,"B")
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uINVOriginal!Date_time,V.Local.dDate_time)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uINVOriginal!PART,V.Local.sPartRev)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uINVOriginal!USER,V.Caller.User)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uINVOriginal!SWITCH,V.caller.Switches)
+
+	'clear out the snap shot table
+	F.ODBC.Connection!conx.Execute("Delete From GCG_3873_INV_CHGSNPH")
+	'open table to store these values in
+	F.ODBC.Connection!conx.OpenRecordsetRW("RSTSNP","Select * From GCG_3873_INV_CHGSNPH")
+	F.Intrinsic.Variable.SaveUDTToRecordset("conx","rstsnp","v.uglobal.uInvOriginal")
+	F.ODBC.conx!RSTSNP.Close
+F.Intrinsic.Control.Elseif(V.Caller.Switches,=,"D")
+	'need to look in the UDT for the Description field, which has an Field_ID of 104
+
+
+	F.Intrinsic.Variable.UDTMultiSeek(V.uGlobal.uINVOriginal!FIELD_ID,100,V.Local.sOrd)
+	F.ODBC.Connection!conx.OpenRecordsetRW("RSTDELETED","Select * From GCG_3873_INV_CHGHIST")
+	F.ODBC.conx!RSTDELETED.AddNew
+	F.ODBC.conx!RSTDELETED.Set!Date_time(V.Local.dDate_time)
+	F.ODBC.conx!RSTDELETED.Set!User(V.Caller.User)
+	F.ODBC.conx!RSTDELETED.Set!Part(V.Local.sPartRev)
+	F.ODBC.conx!RSTDELETED.Set!Switch(V.Caller.Switches)
+'	F.ODBC.conx!RSTDELETED.Set!Before_After("B")
+	F.ODBC.conx!RSTDELETED.Set!Field_ID(V.uGlobal.uINVOriginal(v.Local.sOrd)!FIELD_iD)
+	F.ODBC.conx!RSTDELETED.Set!Before_value(V.uGlobal.uINVOriginal(v.Local.sOrd)!FIELD_VALUE)
+	F.ODBC.conx!RSTDELETED.Update
+	F.ODBC.conx!RSTDELETED.Close
+
+	F.Intrinsic.Variable.UDTMultiSeek(V.uGlobal.uINVOriginal!FIELD_ID,101,V.Local.sOrd)
+	F.ODBC.Connection!conx.OpenRecordsetRW("RSTDELETED","Select * From GCG_3873_INV_CHGHIST")
+	F.ODBC.conx!RSTDELETED.AddNew
+	F.ODBC.conx!RSTDELETED.Set!Date_time(V.Local.dDate_time)
+	F.ODBC.conx!RSTDELETED.Set!User(V.Caller.User)
+	F.ODBC.conx!RSTDELETED.Set!Part(V.Local.sPartRev)
+	F.ODBC.conx!RSTDELETED.Set!Switch(V.Caller.Switches)
+'	F.ODBC.conx!RSTDELETED.Set!Before_After("B")
+	F.ODBC.conx!RSTDELETED.Set!Field_ID(V.uGlobal.uINVOriginal(v.Local.sOrd)!FIELD_iD)
+	F.ODBC.conx!RSTDELETED.Set!Before_value(V.uGlobal.uINVOriginal(v.Local.sOrd)!FIELD_VALUE)
+	F.ODBC.conx!RSTDELETED.Update
+	F.ODBC.conx!RSTDELETED.Close
+
+	F.Intrinsic.Variable.UDTMultiSeek(V.uGlobal.uINVOriginal!FIELD_ID,104,V.Local.sOrd)
+	F.ODBC.Connection!conx.OpenRecordsetRW("RSTDELETED","Select * From GCG_3873_INV_CHGHIST")
+	F.ODBC.conx!RSTDELETED.AddNew
+	F.ODBC.conx!RSTDELETED.Set!Date_time(V.Local.dDate_time)
+	F.ODBC.conx!RSTDELETED.Set!User(V.Caller.User)
+	F.ODBC.conx!RSTDELETED.Set!Part(V.Local.sPartRev)
+	F.ODBC.conx!RSTDELETED.Set!Switch(V.Caller.Switches)
+'	F.ODBC.conx!RSTDELETED.Set!Before_After("B")
+	F.ODBC.conx!RSTDELETED.Set!Field_ID(V.uGlobal.uINVOriginal(v.Local.sOrd)!FIELD_iD)
+	F.ODBC.conx!RSTDELETED.Set!Before_value(V.uGlobal.uINVOriginal(v.Local.sOrd)!FIELD_VALUE)
+	F.ODBC.conx!RSTDELETED.Update
+	F.ODBC.conx!RSTDELETED.Close
+
+F.Intrinsic.Control.EndIf
+
+Program.Sub.INVOriginal.End
+
+Program.Sub.INVSave.Start
+'Subroutine that will be called on the Open of the inventory
+'maintenance screen
+'if switch is O we need to track all the fields
+'if switch is either for NEw or delete, all we need to track is the part number and the description
+
+V.Local.sSQL1.Declare(String)
+V.Local.sSQL2.Declare(String)
+V.Local.sSQL3.Declare(String)
+V.Local.sPart.Declare(String)
+V.Local.SRev.Declare(String)
+V.Local.sPartRev.Declare(String)
+V.Local.dDate_time.Declare(Date)
+V.Local.sOrd.Declare(String)
+
+
+V.Local.dDate_time.Set(V.Ambient.Now)
+V.Global.sUDTChoice.Set("uInvAfter")
+
+
+F.Intrinsic.Control.If(V.Caller.Switches,<>,"D")
+	V.Local.sPart.Set(V.Passed.000007)
+	V.Local.SRev.Set(V.Passed.000008)
+	F.Intrinsic.String.GSSPartString(V.Local.sPart,V.Local.SRev,V.Local.sPartRev)
+
+	'Inventory MSTr table and fields
+	F.Intrinsic.String.Concat(V.Local.sSQL1,"Select Left(Part, 17) As Part, Right (Part, 3) As Rev, Location, Product_Line, Description, UM_INVENTORY, BIN, AMT_COST,",V.Local.sSQL1)
+	F.Intrinsic.String.Concat(V.Local.sSQL1," AMT_ALT_COST, CODE_ABC, UM_PURCHASING From V_INVENTORY_MSTR Where Part ='",V.Local.sPartRev,"'",V.Local.sSQL1)
+		
+	'Master 2 and Inventory MSTr 3 table
+	F.Intrinsic.String.Concat("Select IM2.Code_Source, IM3.DO_NOT_CALC_ABC FRom V_Inventory_MST2 As IM2 Inner Join V_Inventory_MST3 AS IM3 On IM2.Part = IM3.Part Where IM2.Part ='",V.Local.sPartRev,"'",V.Local.sSQL2)
+	
+	'Inventory ALt Price table
+	F.Intrinsic.String.concat("Select ALT_PRICE_1, ALT_PRICE_2, ALT_PRICE_3, ALT_PRICE_4 From V_INV_ALT_PRICE Where Part = '",V.Local.sPartRev,"'",V.Local.sSQL3)
+
+	'open recordsets
+	F.ODBC.connection!conx.OpenRecordsetRO("rstMSTR",V.Local.sSQL1)
+	F.ODBC.Connection!conx.OpenRecordsetRO("rstMST2&3",V.Local.sSQL2)
+	F.ODBC.Connection!conx.OpenRecordsetRO("rstALTPRICE",V.Local.sSQL3)
+	
+	F.Intrinsic.Control.If(V.ODBC.conx!rstMSTR.EOF,=,True)
+		F.ODBC.conx!rstMSTR.Close
+		'starting with 100 as id go down
+		'part
+		V.uGlobal.uINVAfter.RedimPreserve(0,V.Global.iUDTINC)
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("100")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'rev
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("101")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'location
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("102")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Prod Line
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("103")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Part Description
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("104")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'UM
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!Field_ID.Set("105")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'ABC
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("111")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Purch Um
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("112")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'BIN
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("107")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'COST
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("108")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt cost
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("109")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.Control.Else
+		'starting with 100 as id go down
+		'part
+		V.uGlobal.uINVAfter.RedimPreserve(0,V.Global.iUDTINC)
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("100")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!part)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		
+		'rev
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("101")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!rev)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'location
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("102")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!Location)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Prod Line
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("103")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!Product_Line)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Part Description
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("104")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!Description)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'UM
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!Field_ID.Set("105")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!UM_INVENTORY)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'ABC
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("111")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!CODE_ABC)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'Purch Um
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("112")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!UM_PURCHASING)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'BIN
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("107")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!BIN)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'COST
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("108")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!AMT_COST)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt cost
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("109")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMSTR.FieldValTrim!AMT_ALT_COST)
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.Control.If(V.ODBC.conx!rstmst2&3.EOF,=,True)
+		F.ODBC.conx!rstMST2&3.Close
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("106")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		' do no calc abc flag
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("110")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.Control.Else
+		'Source
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("106")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMST2&3.FieldValTrim!CODE_SOURCE)
+		F.Intrinsic.Control.CallSub(Udtinc)
+
+		' do no calc abc flag
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("110")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstMST2&3.FieldValTrim!DO_NOT_CALC_ABC)
+		F.Intrinsic.Control.CallSub(Udtinc)
+	F.Intrinsic.control.EndIf
+
+	F.Intrinsic.Control.If(V.ODBC.conx!rstALTPRICE.EOF,=,True)
+		F.ODBC.conx!rstALTPRICE.Close
+		'alt price 1
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("113")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 2
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("114")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 3
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("115")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 4
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("116")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set("")
+	F.Intrinsic.Control.Else
+		'alt price 1
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("113")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_1)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 2
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("114")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_2)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 3
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("115")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_3)
+		F.Intrinsic.Control.CallSub(Udtinc)
+		'alt price 4
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_ID.Set("116")
+		V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Set(V.ODBC.conx!rstALTPRICE.FieldValTrim!ALT_PRICE_4)
+	F.Intrinsic.Control.EndIf
+
+	F.ODBC.Connection!conx.CloseRecordsets
+
+	'load beginning udt with data from snap shot
+	F.ODBC.Connection!conx.OpenRecordsetRO("RSTSNP","Select * FROM GCG_3873_INV_CHGSNPH")
+	F.Intrinsic.Variable.LoadUDTFromRecordset("conx","rstSNP","v.uglobal.uInvOriginal",False)
+	F.ODBC.conx!RSTSNP.Close
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.if(V.Caller.SWITCHEs,=,"O")
+	'set the udt variables needed
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uINVOriginal!Date_time,V.Local.dDate_time)
+'	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!BEFORE_AFTER,"A")
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!Date_time,V.Local.dDate_time)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!PART,V.Local.sPartRev)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!USER,V.Caller.User)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!SWITCH,V.caller.switches)
+	F.Intrinsic.Control.CallSub(Compare)
+F.Intrinsic.Control.ElseIf(V.Caller.Switches,=,"N")
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!Date_time,V.Local.dDate_time)
+'	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!BEFORE_AFTER,"A")
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!PART,V.Local.sPartRev)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!USER,V.Caller.User)
+	F.Intrinsic.Variable.UDTSetMemberValue(V.uGlobal.uInvAfter!SWITCH,V.caller.switches)
+'since this is a new part all we want to track is the part number and desciption and that
+'that is all we want to write to the table
+	F.Intrinsic.Variable.UDTMultiSeek(V.uGlobal.uInvAfter!FIELD_ID,100,V.Local.sOrd)
+	F.ODBC.Connection!conx.OpenRecordsetRW("RSTNew","Select * From GCG_3873_INV_CHGHIST")
+	F.ODBC.conx!RSTNew.AddNew
+	F.ODBC.conx!RSTNew.Set!Date_time(V.Local.dDate_time)
+	F.ODBC.conx!RSTNew.Set!User(V.Caller.User)
+	F.ODBC.conx!RSTNew.Set!Part(V.Local.sPartRev)
+	F.ODBC.conx!RSTNew.Set!Switch(V.Caller.Switches)
+'	F.ODBC.conx!RSTNew.Set!Before_After("B")
+	F.ODBC.conx!RSTNew.Set!Field_ID(V.uGlobal.uInvAfter(v.Local.sOrd)!FIELD_iD)
+	F.ODBC.conx!RSTNew.Set!After_value(V.uGlobal.uInvAfter(v.Local.sOrd)!FIELD_VALUE)
+	F.ODBC.conx!RSTNew.Update
+	F.ODBC.conx!RSTNew.Close
+
+	F.Intrinsic.Variable.UDTMultiSeek(V.uGlobal.uInvAfter!FIELD_ID,101,V.Local.sOrd)
+	F.ODBC.Connection!conx.OpenRecordsetRW("RSTNew","Select * From GCG_3873_INV_CHGHIST")
+	F.ODBC.conx!RSTNew.AddNew
+	F.ODBC.conx!RSTNew.Set!Date_time(V.Local.dDate_time)
+	F.ODBC.conx!RSTNew.Set!User(V.Caller.User)
+	F.ODBC.conx!RSTNew.Set!Part(V.Local.sPartRev)
+	F.ODBC.conx!RSTNew.Set!Switch(V.Caller.Switches)
+'	F.ODBC.conx!RSTNew.Set!Before_After("B")
+	F.ODBC.conx!RSTNew.Set!Field_ID(V.uGlobal.uInvAfter(v.Local.sOrd)!FIELD_iD)
+	F.ODBC.conx!RSTNew.Set!After_value(V.uGlobal.uInvAfter(v.Local.sOrd)!FIELD_VALUE)
+	F.ODBC.conx!RSTNew.Update
+	F.ODBC.conx!RSTNew.Close
+
+	F.Intrinsic.Variable.UDTMultiSeek(V.uGlobal.uINvAfter!FIELD_ID,104,V.Local.sOrd)
+	F.ODBC.Connection!conx.OpenRecordsetRW("RSTNEW","Select * From GCG_3873_INV_CHGHIST")
+	F.ODBC.conx!RSTNew.AddNew
+	F.ODBC.conx!RSTNew.Set!Date_time(V.Local.dDate_time)
+	F.ODBC.conx!RSTNew.Set!User(V.Caller.User)
+	F.ODBC.conx!RSTNew.Set!Part(V.Local.sPartRev)
+	F.ODBC.conx!RSTNew.Set!Switch(V.Caller.Switches)
+	'F.ODBC.conx!RSTNew.Set!Before_After("B")
+	F.ODBC.conx!RSTNew.Set!Field_ID(V.uGlobal.uInvAfter(v.Local.sOrd)!FIELD_iD)
+	F.ODBC.conx!RSTNew.Set!After_value(V.uGlobal.uInvAfter(v.Local.sOrd)!FIELD_VALUE)
+	F.ODBC.conx!RSTNew.Update
+	F.ODBC.conx!RSTNew.Close
+	
+F.Intrinsic.Control.EndIf
+
+
+
+
+
+Program.Sub.INVSave.End
+
+Program.Sub.UDTINC.Start
+'SUB ROUTINE THAT WILL INCREMENT EITHER UDTS WHICH EVER IS NEEDED
+
+F.Intrinsic.Math.Add(V.Global.iUDTINC,1,V.Global.iUDTINC)
+
+F.Intrinsic.Control.If(V.Global.sUDTCHOICE,=,"uInvOriginal")
+	'nows lets redim and increment,
+	'subroutine when called should just increment the UDT for me
+	V.uGlobal.uINVOriginal.RedimPreserve(0,V.Global.iUDTINC)
+F.Intrinsic.Control.Else
+	V.uGlobal.uinvAfter.redimPreserve(0,V.Global.iUDTINC)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+
+
+
+Program.Sub.UDTINC.End
+
+Program.Sub.Compare.Start
+'THIS SUBROUTINE WILL GO THRU AND FIND ALL
+'CHANGES THAT HAVE BEEN MADE
+'IF a non match is found call the write record and write that record to the GCG_VEND_CHG_HIST table
+
+'set global variable back to 0
+V.global.iUDTINC.Set("0")
+
+
+
+'must sort udt elements
+F.Intrinsic.Variable.UDTMultiQuickSort(V.uGlobal.uINVOriginal!FIELD_ID,False)
+F.Intrinsic.Variable.UDTMultiQuickSort(V.uGlobal.uINVAfter!FIELD_ID,False)
+
+F.Intrinsic.Control.For(V.Global.iUDTINC,0,V.uGlobal.uINVAfter.UBound,1)
+	F.Intrinsic.Control.If(V.uGlobal.uINVAfter(v.Global.iUDTINC)!FIELD_VALUE.Trim,<>,V.uGlobal.uINVOriginal(v.Global.iUDTINC)!FIELD_VALUE.Trim)
+		F.Intrinsic.Control.CallSub(Writerecord)
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Next(V.Global.iUDTINC)
+
+
+Program.Sub.Compare.End
+
+Program.Sub.WriteRecord.Start
+'this subrooutine will get the information stored
+'within both UDTS whose values do not match and
+'write them to the GCG_VEND_CHG_HIST table
+
+'open the recordset
+'F.ODBC.Connection!conx.OpenRecordsetRW("RSTB","Select * FROM GCG_INV_CHG_HIST")
+'F.ODBC.conx!RSTb.AddNew
+'F.ODBC.conx!RSTB.Set!Date_Time(V.uGlobal.uInvOriginal(v.Global.iUDTINC)!DATE_TIME)
+'F.ODBC.conx!RSTB.Set!Part(V.uGlobal.uInvOriginal(v.Global.iUDTINC)!Part)
+'F.ODBC.conx!RSTB.Set!User(V.uGlobal.uInvOriginal(v.Global.iUDTINC)!USER)
+'F.ODBC.conx!RSTB.Set!Switch(V.uGlobal.uInvOriginal(v.Global.iUDTINC)!SWITCH)
+'F.ODBC.conx!RSTB.Set!Before_After(V.uGlobal.uInvOriginal(v.Global.iUDTINC)!BEFORE_AFTER)
+'F.ODBC.conx!RSTB.Set!Field_ID(V.uGlobal.uInvOriginal(v.Global.iUDTINC)!FIELD_ID)
+'F.ODBC.conx!RSTB.Set!Field_Value(V.uGlobal.uInvOriginal(v.Global.iUDTINC)!_VALUE)
+'F.ODBC.conx!RSTB.Update
+'F.ODBC.conx!RSTB.Close
+
+F.ODBC.connection!conx.OpenRecordsetRW("RSTA","Select * From GCG_3873_INV_CHGHIST")
+ F.ODBC.conx!RSTA.AddNew
+F.ODBC.conx!RSTA.Set!Date_Time(V.uGlobal.uInvAfter(v.Global.iUDTINC)!DATE_TIME)
+F.ODBC.conx!RSTA.Set!Part(V.uGlobal.uInvAfter(v.Global.iUDTINC)!Part)
+F.ODBC.conx!RSTA.Set!User(V.uGlobal.uInvAfter(v.Global.iUDTINC)!USER)
+F.ODBC.conx!RSTA.Set!Switch(V.uGlobal.uInvAfter(v.Global.iUDTINC)!SWITCH)
+'F.ODBC.conx!RSTA.Set!Before_After(V.uGlobal.uInvAfter(v.Global.iUDTINC)!BEFORE_AFTER)
+F.ODBC.conx!RSTA.Set!Field_ID(V.uGlobal.uInvAfter(v.Global.iUDTINC)!FIELD_ID)
+F.ODBC.conx!RSTA.Set!Before_Value(V.uGlobal.uINVOriginal(V.Global.iUDTINC)!Field_VALUE)
+F.ODBC.conx!RSTA.Set!After_Value(V.uGlobal.uInvAfter(v.Global.iUDTINC)!FIELD_VALUE)
+F.ODBC.conx!RSTA.Update
+F.ODBC.conx!RSTA.Close
+
+F.Intrinsic.Control.ExitSub
+
+
+
+
+
+
+Program.Sub.WriteRecord.End
+
+Program.Sub.Comments.Start
+${$0$}$GCG_3873_INV_CHG_HIST$}$TRT$}$4/29/2016
+${$1$}$$}$$}$1$}$10185$}$INS010B-SAVE-BUTN-POST-HOOK$}$4/29/2016 3:52:54 PM$}$(Program: INVMAIN; Screen: INS010B)
+
+${$1$}$$}$$}$0$}$10170$}$INS010B-SAVE-BUTN-HOOK$}$4/29/2016 3:52:35 PM$}$(Program: INVMAIN; Screen: INS010B)
+
+Program.Sub.Comments.End
+
